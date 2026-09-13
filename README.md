@@ -13,39 +13,36 @@ as a local **EXL3 2.9 bpw / mul1** checkpoint (`model/`, 39 shards, 196 GiB)
 on a **2× NVIDIA GB10** kit: tensor-parallel size 2 over CX7, native `sm_121a`
 cubins, API on `:8888`. Served model id: **`DeepSeek-v4.1-Flash-EXL3`**.
 
-This is **DSpark**, not DFlash. Draft experts live in the checkpoint
+Speculation is **DSpark**, and the draft experts live in the checkpoint
 (`mtp.*`, `dspark_block_size=5`, 128 draft experts / top-3, target layers
-37–39). There is no extra drafter repo to download.
+37–39) — there is no separate drafter to download.
 
-Operational launcher, image-ship, CX7 pins, health wait, and fused EXL3 MoE
-are ported from
-[MiaAI-Lab/GLM-5.3-Flash-EXL3-2x-DGX-Sparks](https://github.com/MiaAI-Lab/GLM-5.3-Flash-EXL3-2x-DGX-Sparks).
-The GLM image (`glm53-flash-arm64-cu130`) is the **wrong** base here — it has
-no `DeepseekV41` architecture. We overlay EXL3 onto
-`vllm/vllm-openai:deepseekv41-flash-0909` (linux/arm64, vLLM
-`0.1.dev20904+g179dd0fa9`).
+The image overlays EXL3 onto `vllm/vllm-openai:deepseekv41-flash-0909`
+(linux/arm64, vLLM `0.1.dev20904+g179dd0fa9`), the only base carrying the
+`DeepseekV41` architecture.
 
 ## What this checkpoint is
 
 | | |
 |---|---|
 | Arch | CED 20+20 (20-layer causal encoder + 20-layer decoder), CSA2, Engram at layers 1 and 14, vision tower, native DSpark |
-| Quant | EXL3 **mul1** (not GLM's mcg), average **2.9 bpw**, `head_bits=6`, `mtp_bits=4`. Quantizer `version 1.4.2`; runtime is ExLlamaV3 **v1.4.5** (`e648f1a1`) |
+| Quant | EXL3 codebook **mul1** (not `mcg`), average **2.9 bpw**, `head_bits=6`, `mtp_bits=4`. Quantizer `version 1.4.2`; runtime is ExLlamaV3 **v1.4.5** (`e648f1a1`) |
 | K | **Per tensor**, from `files/exl3_k_map.json`: routed experts **3** except layers 18–22 (**2**); shared experts **5** on layers 0–10 and 30–39, **4** on 11–29 (layer 29 is mixed, inferred from the trellis); attention **5**; `lm_head` **6**; indexer `wk` **8**; Engram wkv L1=**5** / L14=**4**; MTP **4**. Do not `int(2.9)` → 2 |
 | Packed | `trellis` / `suh` / `svh` / `mul1` — marker int32 **`-2082680531`** (unsigned `2212286765` = `0x83DCD12D`). 47,900 packed matrices, 852 native tensors |
 | Native | `embed.weight`, router gate weight+bias, all norms, `attn_sink`, the `hc_*` coefficients, the whole vision tower, Engram `k_weight`/`q_weight`, indexer `weights_proj` |
 | KV | vLLM picks DeepSeek's **`fp8_ds_mla`** layout itself (`Using DeepSeek's fp8_ds_mla KV cache format` in the log). Do not pass `--kv-cache-dtype`. Measured pool cost here: 2.5 GiB per rank = **774,400 tokens** at `MAX_MODEL_LEN=614400`, i.e. ~3.4 KiB/token. (Upstream's "890 B/token" is the model's native FP4 main-KV design, not what this build allocates.) |
 | Sampling | Official: `temperature=1.0`, `top_p=0.95`. Thinking defaults **on**; the template's `reasoning_effort` defaults to `"high"` (= 75; `"low"`=50, `"max"`=100, or an int 1–100). Smokes should send `chat_template_kwargs.enable_thinking=false` |
 
-## DSpark vs DFlash
+## Speculation
 
-| | This recipe | GLM-5.3-Flash EXL3 recipe |
-|---|---|---|
-| Speculator | **DSpark** (in-checkpoint MTP/draft experts) | **DFlash2** extra Qwen draft (`incoai/GLM-5.3-Flash-DFlash2`) |
-| Flag | `--speculative-config '{"method":"dspark","num_speculative_tokens":3}'` | `method=dflash` + draft `--model` |
-| k | **3** (`DSPARK_TOKENS`). The checkpoint's `dspark_block_size=5` is the ceiling, not the setting: k=3 measured faster on prose | 7 |
-| Capture sizes | `1 2 3 4 6 8 12 18 24` (include 6) | `1 2 4 8 16 24 32` |
-| Parsers | `--tokenizer-mode deepseek_v41` `--tool-call-parser deepseek_v41` `--reasoning-parser deepseek_v41` | `glm47` / `glm45` |
+| | |
+|---|---|
+| Method | **DSpark** — the MTP/draft experts already in the checkpoint |
+| Flag | `--speculative-config '{"method":"dspark","num_speculative_tokens":3}'` |
+| k | **3** (`DSPARK_TOKENS`). `dspark_block_size=5` is the checkpoint's ceiling, not the setting: k=3 measured faster on prose |
+| Capture sizes | `1 2 3 4 6 8 12 18 24` — 6 is included so a k=3 step (2 seqs × 3 tokens) is captured |
+| Parsers | `--tokenizer-mode deepseek_v41` `--tool-call-parser deepseek_v41` `--reasoning-parser deepseek_v41` |
+| Off | `SPEC_METHOD=none` frees ~3.5 GiB and is faster once the batch is wide (see Measured) |
 
 ## Memory
 
@@ -276,7 +273,7 @@ instead of NFS — worth 25–50 % of prefill. Not required to boot.
 
 ## CX7
 
-Same pins as the GLM kit on this pair: spark1 `enp1s0f1np1`/`rocep1s0f1` ↔
+Pins on this pair: spark1 `enp1s0f1np1`/`rocep1s0f1` ↔
 spark2 `enp1s0f0np0`/`rocep1s0f0`. NCCL cannot use the `10.0.0.x` loopback
 aliases. GID index is per-NIC — an all-zero entry dies ~60 s in with
 `ibv_modify_qp` errno 61. Preflight checks each rank.
@@ -322,12 +319,12 @@ before launching (`logs/overlay-verify.log`).
 
 ## SM12x runtime notes
 
-Four things this vLLM build needs on GB10 that the GLM recipe never hit:
+Four things this vLLM build needs on GB10:
 
 - **E3 v2 grouped fat-expert kernels** (`overlay/e3v2/exl3_fat_moe.cu`, built into the image as
-  `exl3_fat_moe_ext`): the GLM recipe's E3 kernels were K=4/MCG-only and needed one shared gate/up
-  sign vector; v2 is templated on (bits, codebook) and gathers gate and up separately, so this
-  K=3/K=2 mul1 tree runs them. Every expert with more than `EXL3_TEMP_ROWS_FUSED` (16) rows in a
+  `exl3_fat_moe_ext`): the original E3 kernels were K=4/MCG-only and needed one shared gate/up
+  sign vector, so they were dead code here; v2 is templated on (bits, codebook) and gathers gate
+  and up separately, which is what lets this K=3/K=2 mul1 tree use them. Every expert with more than `EXL3_TEMP_ROWS_FUSED` (16) rows in a
   prefill chunk goes through three grouped launches per layer instead of the per-16-row fused
   kernel (17.0 vs 34.1 ms per layer at a 1536-token chunk; `scripts/quality/moe_e3_probe.py`).
 - **Kernel envelope** (`overlay/patch_sm120_block64.py`): 64-token KV blocks (DeepGEMM paged MQA
@@ -394,6 +391,5 @@ prefill answers in **3.6 s**. Head `MemAvailable` 4.07–4.21 GiB after warm-up,
 
 ## License
 
-Launcher/overlay: AGPL-3.0 (same as the GLM recipe this was adapted from),
-plus MIT for files that carry `LICENSE.MIT`.
+Launcher/overlay: AGPL-3.0, plus MIT for files that carry `LICENSE.MIT`.
 Model weights: MIT (DeepSeek).
