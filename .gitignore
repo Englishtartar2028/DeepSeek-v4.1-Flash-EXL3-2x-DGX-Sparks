@@ -1,0 +1,95 @@
+# ---------------------------------------------------------------------------
+# Weights and other big local trees. ./download.sh and ./start.sh fetch these
+# from the Hub (EXL3 checkpoint 39 shards ~197 GiB; Engram shards 47+48
+# ~190 GiB) and ./start.sh NFS-shares them to the worker. Keep them out of git.
+# ---------------------------------------------------------------------------
+/model/
+/engram-src/
+*.safetensors
+*.safetensors.index.json
+*.gguf
+*.pt
+*.pth
+# ./start.sh pack writes engram-l{1,14}-r<rank>of<tp>.bin (47 GiB each)
+*.bin
+
+# ---------------------------------------------------------------------------
+# Machine-local runtime state and secrets
+# ---------------------------------------------------------------------------
+# .env holds this cluster's IPs, SSH user and tuned knobs. .env.example is the
+# shipped template and MUST stay tracked.
+/.env
+/.env.local
+!/.env.example
+# rendered by start.sh on every boot from the launcher's own settings
+/.dsv41-exl3-*.inner.sh
+# boot logs, memguard logs, py-spy hang dumps, bench json, guard pidfiles
+/logs/
+*.pid
+
+# ---------------------------------------------------------------------------
+# Build artifacts. librow_store.so is compiled from the tracked
+# overlay/row_store.cpp inside the image (Dockerfile: g++ -O3 -shared -fPIC
+# -pthread). Run that same line locally if you want host-side
+# tests/test_row_store.py to work without the image.
+# ---------------------------------------------------------------------------
+*.so
+*.o
+*.a
+build/
+dist/
+*.egg-info/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# ---------------------------------------------------------------------------
+# Benchmark and profiling output
+# ---------------------------------------------------------------------------
+/results/
+/scratchpad/
+*.nsys-rep
+*.qdrep
+*.ncu-rep
+trace*.json
+*.trace.json.gz
+
+# ---------------------------------------------------------------------------
+# Editor and OS cruft
+# ---------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+*.bak
+*.orig
+*.rej
+.idea/
+.vscode/
+.cursor/
+
+# ---------------------------------------------------------------------------
+# Not on the build or launch path — nothing in the Dockerfile or start.sh
+# reads any of these, so they stay local rather than shipping with the kit.
+# ---------------------------------------------------------------------------
+# Internal working notes (cluster IPs, crash post-mortems, per-boot ladders)
+/HANDOFF.md
+/improve.md
+
+# Benchmarks — drive the live OpenAI API, need a healthy server
+/scripts/bench/
+/tests/bench_decode.py
+
+# Quality probes — GEMM / MoE / NCCL / weight-parity checks against the
+# checkpoint, run by hand with the server down
+/scripts/quality/
+
+# Scratch space — intermediate outputs, one-off scripts, agent working files
+/scratchpad/
+/.scratchpad/
