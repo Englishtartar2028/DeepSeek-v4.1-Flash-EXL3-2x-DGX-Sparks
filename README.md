@@ -151,6 +151,22 @@ Point `ENGRAM_DIR` at an existing `DeepSeek-V4.1-Flash` tree to skip that half.
 `./download.sh` to stage them without booting the server. Needs the Hugging
 Face CLI: `pip install -U 'huggingface_hub[hf_transfer]'`.
 
+### Optional: Keys abliterated overlay (third party)
+
+Not a fork of this kit. A ~650 MB sidecar replaces `layers.10–35.attn.wo_b`
+(EXL3 mul1 K=5) on a **copy** of the 2.9 bpw pack. L0–9 / L36–39 / MTP /
+Engram / experts stay stock. Keep this repo’s `start.sh`, image, and native
+Engram shards 47+48.
+
+1. Overlay (gated, automatic approval):
+   [`drowzeys/DeepSeek-V4.1-Flash-Abliterated-Cybersecurity-Unleashed`](https://huggingface.co/drowzeys/DeepSeek-V4.1-Flash-Abliterated-Cybersecurity-Unleashed)
+   — file **`mia_exl3_wo_b_l10_35.safetensors`**. Do **not** use
+   `wo_b_l10_35.safetensors` (that is FP8 for other packs).
+2. Apply helper:
+   [`drowzeys/keys-DeepSeek-V4.1-Flash-Abliterated-Mia-2x-Spark-EXL3`](https://github.com/drowzeys/keys-DeepSeek-V4.1-Flash-Abliterated-Mia-2x-Spark-EXL3)
+3. Set `MODEL_HOST` in `.env` to the applied dest. Leave `ENGRAM_DIR` as native
+   shards 47+48.
+
 ```bash
 ./start.sh status
 ./start.sh logs
