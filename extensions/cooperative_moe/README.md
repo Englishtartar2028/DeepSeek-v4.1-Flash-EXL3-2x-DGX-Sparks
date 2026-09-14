@@ -5,6 +5,11 @@ cooperative expert kernels to reduce decode latency while preserving the stock
 path for unsupported layers and larger prefills. Activation is explicit; this
 change does not modify the default image, launcher, or overlay.
 
+**To try it:** follow the [complete two-node opt-in guide](../../docs/cooperative-moe-quickstart.md).
+It includes the pinned image, build commands, artifact copying, per-node GPU
+checks, exact `.env` settings, startup verification, and rollback. A standalone
+`DSV41_COOPERATIVE_MOE=1` does not activate or install the extension.
+
 Measured improvements include **23.9% higher poetry decode, 10.8% higher coding
 decode, and 33.1% higher combined C2 decode** in the paired tests, with 32K prefill
 effectively unchanged. See the [benchmark and validation report](../../docs/cooperative-moe.md)
@@ -48,6 +53,10 @@ repeat the native/integration gates before repinning a different binary.
 
 ## Select a profile
 
+The steps below describe the mechanism. For an executable operator workflow,
+including copying to the worker and the actual start command, use the
+[opt-in guide](../../docs/cooperative-moe-quickstart.md).
+
 Stage `cooperative_moe.so` and `runtime.py` at the same container-visible path on
 **both ranks**. The existing per-node vLLM cache mount can be used. Then generate
 a separate overlay with verified artifacts:
@@ -66,6 +75,8 @@ service. During an approved maintenance window, select the generated file with
 the launcher's existing `EXL3_OVERLAY_HOST` setting and retain the required stream
 configuration. The generated profile explicitly enables the adapter; direct
 integrations may use `DSV41_COOPERATIVE_MOE=1` when calling `install()`.
+An existing `EXL3_OVERLAY_HOST` assignment in `.env` takes precedence over a
+command-line overlay choice, so replace it in `.env` when selecting a profile.
 
 Preserve the previous configuration for rollback. Remove the overlay override
 and restore those settings at the next approved restart to return to stock.

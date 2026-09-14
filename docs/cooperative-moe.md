@@ -1,5 +1,10 @@
 # Cooperative MoE: benchmark and validation report
 
+To reproduce the setup on an existing installation, follow the
+[two-node opt-in and rollback guide](cooperative-moe-quickstart.md). It includes
+the immutable build-image reference and the actual artifact deployment and
+launcher commands; the adapter enablement variable alone is not sufficient.
+
 ## Configuration and provenance
 
 The September 14, 2026 comparison used recipe `979e68a62c90b24d928f5638596e0ceed90e9f34`
