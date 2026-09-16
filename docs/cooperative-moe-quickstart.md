@@ -3,8 +3,10 @@
 This is the complete manual opt-in procedure for an **already working DS4.1 TP2
 installation**. Use a dedicated Bash shell on the head Spark, with this recipe
 checked out, the checkpoint already installed, and passwordless SSH/Docker access to the
-configured worker. The measured configuration is text-only, 600K maximum context,
-two requests, and DSpark k=3. Vision is outside this validation scope.
+configured worker. Decode numbers below were measured text-only, 600K maximum
+context, two requests, and DSpark k=3. The kit default is vision on
+(`LANGUAGE_MODEL_ONLY=0`, `MAX_NUM_BATCHED_TOKENS` >= 1536); vision was outside
+that validation scope, not a reason to turn it off.
 
 **Activation is a selected overlay, not a standalone environment toggle.**
 `DSV41_COOPERATIVE_MOE=1 ./start.sh start` by itself does not import the adapter or
@@ -196,7 +198,8 @@ SPEC_METHOD=dspark
 DSPARK_TOKENS=3
 MAX_MODEL_LEN=600000
 MAX_NUM_SEQS=2
-LANGUAGE_MODEL_ONLY=1
+MAX_NUM_BATCHED_TOKENS=1536
+LANGUAGE_MODEL_ONLY=0
 ```
 
 `EXL3_OVERLAY_HOST` must be set in `.env` when an older override already exists
@@ -207,7 +210,7 @@ an additional activation step.
 
 ```bash
 IMAGE="$COOP_IMAGE" SPEC_METHOD=dspark DSPARK_TOKENS=3 \
-  MAX_MODEL_LEN=600000 MAX_NUM_SEQS=2 LANGUAGE_MODEL_ONLY=1 \
+  MAX_MODEL_LEN=600000 MAX_NUM_SEQS=2 MAX_NUM_BATCHED_TOKENS=1536 LANGUAGE_MODEL_ONLY=0 \
   EXL3_FUSED_MOE=1 EXL3_TEMP_ROWS_FUSED=8 EXL3_FAT_KERNEL=0 EXL3_FAT_GROUPED=1 \
   SKIP_PULL=1 SKIP_BUILD=1 SKIP_SHIP=1 SKIP_SYNC=1 \
   ./start.sh start 2>&1 | tee "$COOP_RUN/start.log"

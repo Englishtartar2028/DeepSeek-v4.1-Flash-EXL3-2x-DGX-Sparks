@@ -95,8 +95,10 @@ curl -s http://localhost:8888/v1/chat/completions \
           EXL3_FUSED_MOE=0 + ENFORCE_EAGER=1, then SPEC_METHOD=none.
         * `EXL3 load shape mismatch` -> a TP=2 packed-linear or K-map problem; attach
           the tensor name from the traceback.
-        * Image requests rejected -> SM12x is text-only here (LANGUAGE_MODEL_ONLY=1):
-          FlashInfer has no 1152-wide sparse-MLA kernel on SM120.
+        * Image requests rejected (`At most 0 image(s)`) -> LANGUAGE_MODEL_ONLY=1
+          in `.env`. New checkouts default to 0. Set LANGUAGE_MODEL_ONLY=0 and
+          MAX_NUM_BATCHED_TOKENS>=1536, then restart. The SM12x 128-wide window
+          clamp is what makes vision runnable, not a reason to disable it.
 -->
 
 ```

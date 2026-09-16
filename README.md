@@ -238,6 +238,55 @@ curl -s http://127.0.0.1:8888/v1/chat/completions \
 
 Official sampling for real work: `temperature=1.0`, `top_p=0.95`, and leave thinking on (or set `reasoning_effort` 1–100).
 
+## Images
+
+On by default. The checkpoint carries the full vision tower — 259 `vision.*` tensors plus
+`aligner.*` and the `image_start` / `image_end` / `image_newline` embeddings, all kept native
+rather than quantized — and the NVIDIA entry point is the multimodal one either way
+(`vl_model.py`), with the tower stubbed out when the image limit is 0. Standard OpenAI
+`image_url` parts, `data:` URIs included:
+
+```bash
+python3 - <<'PY'
+import base64, json, urllib.request
+b = base64.b64encode(open("files/ds.png", "rb").read()).decode()
+req = {"model": "DeepSeek-v4.1-Flash-EXL3", "max_tokens": 300, "temperature": 0,
+       "chat_template_kwargs": {"enable_thinking": False},
+       "messages": [{"role": "user", "content": [
+           {"type": "image_url", "image_url": {"url": "data:image/png;base64," + b}},
+           {"type": "text", "text": "Describe this image, and transcribe any text in it exactly."}]}]}
+r = urllib.request.urlopen(urllib.request.Request(
+    "http://127.0.0.1:8888/v1/chat/completions", data=json.dumps(req).encode(),
+    headers={"Content-Type": "application/json"}), timeout=600)
+print(json.loads(r.read())["choices"][0]["message"]["content"])
+PY
+```
+
+Two settings matter. `LANGUAGE_MODEL_ONLY=0` (the default; set it to `1` for a text-only
+server) and **`MAX_NUM_BATCHED_TOKENS >= 1536`**. The chunk floor is not advisory: with the
+tower on, vLLM forces `--disable_chunked_mm_input` for multimodal-bidirectional attention and
+then refuses to start unless a whole image item fits in one prefill chunk —
+`max_tokens_per_mm_item` (1025 = 1024 image tokens + 1) must not exceed
+`max_num_batched_tokens`. At 1024 the boot dies with a `ValueError` out of
+`compute_mm_encoder_budget`, several minutes into weight load.
+
+Verified 2026-09-13 on 2× GB10, temp 0: a 1672×941 logo described correctly with its caption
+transcribed exactly; a synthetic 10-row text image transcribed 10/10 exactly including
+unguessable codes; three distinct cards in one prompt attributed to the right image with all
+nine values exact; one image behind a 200k-token text prefix at 1,017 tok/s. DSpark keeps
+drafting throughout (~60 % acceptance) despite `vl_model.py` dropping `mtp.*` from the main
+model's weight map — the drafter loads those itself.
+
+What is *not* established: any quality parity probe against the native checkpoint. The 128-wide
+window clamp (see [SM12x runtime notes](#sm12x-runtime-notes)) means in-image bidirectional
+visibility is genuinely off. It cost nothing measurable on OCR or multi-image attribution, but
+these were pass/fail probes — a subtle deficit on dense document work or fine spatial reasoning
+would not have shown up. Check before relying on it there.
+
+Existing `.env` files are not rewritten on upgrade. If image requests return HTTP 400
+`At most 0 image(s)`, set `LANGUAGE_MODEL_ONLY=0` and `MAX_NUM_BATCHED_TOKENS=1536` (or
+higher) and restart.
+
 ## Layout
 
 | Path | Role |
@@ -248,7 +297,7 @@ Official sampling for real work: `temperature=1.0`, `top_p=0.95`, and leave thin
 | `Dockerfile` | `vllm-openai:deepseekv41-flash-0909` + SM121 EXL3 ext + the overlay |
 | `overlay/exl3.py` | Packed mul1 loader + apply: routed MoE, attn/shared/engram wkv linears, pinned H2D staging, pre-tune |
 | `overlay/e3v2/` | v2 grouped fat-expert kernels, templated on (bits, codebook) |
-| `overlay/patch_sm120_block64.py` | SM12x kernel envelope: 64-token KV blocks, indexer workspace, no `persistent_topk`, text-only |
+| `overlay/patch_sm120_block64.py` | SM12x kernel envelope: 64-token KV blocks, indexer workspace, no `persistent_topk`, 128-wide image window |
 | `overlay/patch_h2d_stage.py` | vLLM stock weight loaders copy through pinned memory (no copy-on-write of the shard mmaps) |
 | `overlay/patch_memory_log.py` | `[dsv41-mem]` phase lines, page-cache drop, adaptive prefill release, EXL3 pre-tune hook |
 | `overlay/patch_exl3_lm_head.py` | packed `wo_a` through `quant_method.apply` in the CUDA o-proj and the DSpark draft loader |
@@ -400,8 +449,13 @@ Four things this vLLM build needs on GB10:
   kernel (17.0 vs 34.1 ms per layer at a 1536-token chunk; `scripts/quality/moe_e3_probe.py`).
 - **Kernel envelope** (`overlay/patch_sm120_block64.py`): 64-token KV blocks (DeepGEMM paged MQA
   logits and the FlashInfer SM120 sparse-MLA decode page), compressed-KV blocks scaled by the
-  compress ratio, and **text-only** (`LANGUAGE_MODEL_ONLY=1`): FlashInfer has no 1152-wide
-  (1024 image tokens + 128 window) sparse-MLA kernel on SM120.
+  compress ratio, and a **128-wide image window**: FlashInfer has no 1152-wide (1024 image
+  tokens + 128 window) sparse-MLA kernel on SM120, so the patch pins `max_image_tokens` to 0
+  on SM12x. That clamp keys off device capability, not `LANGUAGE_MODEL_ONLY`, so it holds with
+  images on — and it is what makes vision *runnable* here rather than what blocks it: every
+  widened path (`prefill_index_width`, the in-image visibility buffers, `_build_image_visibility`,
+  the widened Triton variants) is a guarded branch, so the missing kernel is never requested.
+  See [Images](#images).
 - **One lock buffer per device in exllamav3**: two EXL3 kernels on different CUDA streams deadlock,
   so the model's aux streams (`DSV41_EXL3_SERIAL_STREAMS=1`) and the shared-experts stream
   (`VLLM_DISABLE_SHARED_EXPERTS_STREAM=1`) are off. Every EXL3 GEMM shape is autotuned before
@@ -433,7 +487,8 @@ Benchmarks run via [sparkDash](https://github.com/MiaAI-Lab/sparkDash).
 
 ## Measured
 
-TP=2, DSpark k=3, text-only, single request unless noted.
+TP=2, DSpark k=3, single request unless noted. Figures below predate the image default and were
+taken with a text-only server; the shipped 1536-token chunk was rechecked with images on.
 
 **Decode** (400-token prose, temp 0, thinking off): **31.6 tok/s** ×1, **42.5** aggregate ×2,
 **42.8** aggregate ×4; structured count 1→200: 40 tok/s. With `SPEC_METHOD=none` a single stream
@@ -445,8 +500,7 @@ Engram shards (`./start.sh pack`, `DSV41_IO_THREADS=96`) and the E3 v2 grouped k
 about 10 %.
 
 **Prefill, long prompts** (`expandable_segments:True`, **2048**-token chunks,
-`LONG_PREFILL_TOKEN_THRESHOLD=1792`, single request). The shipped chunk is now 1024, which these
-numbers do not cover:
+`LONG_PREFILL_TOKEN_THRESHOLD=1792`, single request):
 
 | Prompt | TTFT | tok/s | Steady-state decode at that context |
 |---:|---:|---:|---:|
@@ -459,6 +513,10 @@ numbers do not cover:
 Two fresh 100k prompts at once: 973 tok/s aggregate. A 17-token chat sent into a running 181k
 prefill answers in **3.6 s**. Head `MemAvailable` 4.07–4.21 GiB after warm-up, low-water
 2.56 GiB at 455k and 2.1 GiB at 601k; worker 5.8 GiB.
+
+At the **shipped 1536-token chunk** with images on, head low-water is *higher* than the
+2048-chunk run above — a larger chunk finishes the prefill in fewer scheduler passes, which
+more than pays for the bigger per-chunk activation.
 
 **Optional cooperative MoE** (same pair, not the default overlay): see the table under
 Quick start. Stock numbers in this section are the shipped fused-MoE path.
