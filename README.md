@@ -167,6 +167,57 @@ Engram shards 47+48.
 3. Set `MODEL_HOST` in `.env` to the applied dest. Leave `ENGRAM_DIR` as native
    shards 47+48.
 
+### Optional: cooperative MoE (decode, two Sparks)
+
+Off by default. Stock serving, the published image, and `./start.sh` without an
+overlay override do not load this path. `DSV41_COOPERATIVE_MOE=1` alone does
+nothing.
+
+It is a **selected overlay** plus a native library copied to **both** ranks.
+Prefill stays on the stock kernel; decode on eligible K2/K3 mul1 experts (hidden
+5120, local 1152, top-k 6, 1–8 physical rows) can use Turboderp’s cooperative
+MoE specialization. Requires `DSV41_EXL3_SERIAL_STREAMS=1` and
+`VLLM_DISABLE_SHARED_EXPERTS_STREAM=1` (already the shipped stream contract).
+
+Do **not** compile inside the recipe image. That image has no `git`, and two
+clean `nvcc` runs of the same sources are not bit-identical (`-lineinfo` and the
+GNU build-id). `prepare_profile.py` will reject a rebuilt `.so` that is not the
+pin below.
+
+**Binary pin** (sha256 of `cooperative_moe.so`):
+`a09a589cbdcecb5372991c7b091d732236d58bc5f5aea14ab91e38e426f08d78`
+
+Put that file at
+`extensions/cooperative_moe/artifacts/cooperative_moe.so` (root `.gitignore` skips
+`*.so` except this path) or keep a matching GitHub Release asset.
+Then:
+
+```bash
+printf '%s  cooperative_moe.so\n' \
+  'a09a589cbdcecb5372991c7b091d732236d58bc5f5aea14ab91e38e426f08d78' |
+  sha256sum -c
+```
+
+The full two-node procedure — drain, stage both ranks, 54-case GPU gate, `.env`
+`EXL3_OVERLAY_HOST`, activation grep, rollback — is
+[docs/cooperative-moe-quickstart.md](docs/cooperative-moe-quickstart.md).
+Extension notes, rebuild-for-lab only:
+[extensions/cooperative_moe/README.md](extensions/cooperative_moe/README.md).
+Paired measurements (recipe `979e68a`, same checkpoint/image/k=3/600K/2 seqs):
+
+| Workload | Stock | Cooperative |
+|---|---:|---:|
+| Poetry decode (3-seed median) | 23.62 tok/s | 29.26 tok/s |
+| Coding decode (3-seed median) | 38.76 tok/s | 42.96 tok/s |
+| C1 decode (temp 0) | 31.45 tok/s | 40.23 tok/s |
+| C2 aggregate (temp 0) | 45.87 tok/s | 61.06 tok/s |
+| Uncached 32K prefill | 1138 tok/s | ~unchanged |
+
+Post-merge revalidation on the same pair saw C1 **+25.3%** and C2 **+35.2%**
+after a locally rebuilt binary was **repinned**; that rebuild is not a substitute
+for `a09a589c…`. Arithmetic is not bit-exact with stock. Vision and near-limit
+context were not the validation target.
+
 ```bash
 ./start.sh status
 ./start.sh logs
@@ -202,6 +253,7 @@ Official sampling for real work: `temperature=1.0`, `top_p=0.95`, and leave thin
 | `overlay/patch_memory_log.py` | `[dsv41-mem]` phase lines, page-cache drop, adaptive prefill release, EXL3 pre-tune hook |
 | `overlay/patch_exl3_lm_head.py` | packed `wo_a` through `quant_method.apply` in the CUDA o-proj and the DSpark draft loader |
 | `overlay/engram_file_backend.py`, `overlay/row_store.cpp` | file-backed `ParallelEngramEmbedding` |
+| `extensions/cooperative_moe/` | Optional decode MoE; not loaded unless `EXL3_OVERLAY_HOST` selects its overlay |
 | `files/exl3_k_map.json` | Per-tensor K |
 | `files/chat_template.jinja` | Port of DeepSeek `encoding.py` |
 | `scripts/nfs-share.sh` | NFSv4 export + worker docker volumes (reuses `vllm-fn-nfs`) |
@@ -308,6 +360,9 @@ python3 tests/test_exl3_lm_head.py
 python3 tests/test_sm120_block64.py
 python3 tests/test_h2d_stage.py
 python3 scripts/weight_budget.py --tp 2
+python3 extensions/cooperative_moe/test_dispatch.py
+python3 extensions/cooperative_moe/test_profile.py
+python3 extensions/cooperative_moe/test_build.py
 ```
 
 The chat-template parity harness needs `transformers` **and** the original
@@ -404,6 +459,9 @@ numbers do not cover:
 Two fresh 100k prompts at once: 973 tok/s aggregate. A 17-token chat sent into a running 181k
 prefill answers in **3.6 s**. Head `MemAvailable` 4.07–4.21 GiB after warm-up, low-water
 2.56 GiB at 455k and 2.1 GiB at 601k; worker 5.8 GiB.
+
+**Optional cooperative MoE** (same pair, not the default overlay): see the table under
+Quick start. Stock numbers in this section are the shipped fused-MoE path.
 
 ## License
 

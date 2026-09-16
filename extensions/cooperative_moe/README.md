@@ -5,10 +5,12 @@ cooperative expert kernels to reduce decode latency while preserving the stock
 path for unsupported layers and larger prefills. Activation is explicit; this
 change does not modify the default image, launcher, or overlay.
 
-**To try it:** follow the [complete two-node opt-in guide](../../docs/cooperative-moe-quickstart.md).
-It includes the pinned image, build commands, artifact copying, per-node GPU
-checks, exact `.env` settings, startup verification, and rollback. A standalone
-`DSV41_COOPERATIVE_MOE=1` does not activate or install the extension.
+**To try it:** place the pinned `cooperative_moe.so` (see [artifacts/](artifacts/README.md)),
+then follow the [complete two-node opt-in guide](../../docs/cooperative-moe-quickstart.md).
+That guide covers the pinned image, staging on both ranks, the GPU gate, exact
+`.env` settings (`EXL3_OVERLAY_HOST`), startup verification, and rollback.
+A standalone `DSV41_COOPERATIVE_MOE=1` does not activate or install the
+extension. Do not compile in the recipe image for opt-in.
 
 Measured improvements include **23.9% higher poetry decode, 10.8% higher coding
 decode, and 33.1% higher combined C2 decode** in the paired tests, with 32K prefill

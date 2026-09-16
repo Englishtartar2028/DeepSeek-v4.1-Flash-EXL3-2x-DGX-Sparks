@@ -1,8 +1,8 @@
 # Test the cooperative MoE extension on two Sparks
 
 This is the complete manual opt-in procedure for an **already working DS4.1 TP2
-installation**. Use a dedicated Bash shell on the head Spark, with this PR checked
-out, the checkpoint already installed, and passwordless SSH/Docker access to the
+installation**. Use a dedicated Bash shell on the head Spark, with this recipe
+checked out, the checkpoint already installed, and passwordless SSH/Docker access to the
 configured worker. The measured configuration is text-only, 600K maximum context,
 two requests, and DSpark k=3. Vision is outside this validation scope.
 
