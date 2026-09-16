@@ -31,25 +31,28 @@ The adapter never retries stock after a partially launched CUDA operation.
 
 ## Build
 
-Requirements: an existing ExLlamaV3 checkout containing commit
-`02aef45cd681b960a00afcd0749a4ab99e6c1bfe`, the ARM64 recipe image with CUDA 13,
-and an empty output directory. The script archives the pinned commit rather than
-using uncommitted upstream changes; it does not download or install anything.
+**Operators** install the GPU-validated `cooperative_moe.so` from
+[`artifacts/`](artifacts/README.md) and follow the
+[opt-in guide](../../docs/cooperative-moe-quickstart.md). Do not compile in the
+recipe image for serving: it has no `git`, and `nvcc` is not bit-reproducible
+with the current flags.
+
+**Developers** archive the pinned ExLlamaV3 headers **on a host that has git**,
+then compile in the ARM64 recipe image (or any CUDA 13 SM121a toolchain). The
+container build does not call git.
 
 ```sh
-bash extensions/cooperative_moe/build.sh EXLLAMAV3_CHECKOUT EMPTY_OUTPUT_DIRECTORY
+bash extensions/cooperative_moe/archive_upstream.sh EXLLAMAV3_CHECKOUT EMPTY_HEADER_DIRECTORY
+bash extensions/cooperative_moe/build.sh EXTRACTED_EXLLAMAV3_TREE EMPTY_OUTPUT_DIRECTORY
 ```
 
-Outputs are `cooperative_moe.so`, `runtime.py`, and the build log. To reproduce the
-validated native artifact, use the documented image and mount the output at
-`/work`. The build retains the original compiler input names and native ABI v1
-symbols for binary compatibility. Public source filenames and runtime settings
-use descriptive names; no device arithmetic was changed in that cleanup.
-
-The binary and adapter digests are pinned in `prepare_profile.py`; the adapter
-also verifies the binary at load time. Different toolchains or compiler paths
-may change the binary digest. Do not bypass the check: review the build and
-repeat the native/integration gates before repinning a different binary.
+`EXLLAMAV3_CHECKOUT` must contain commit
+`02aef45cd681b960a00afcd0749a4ab99e6c1bfe`. Outputs are `cooperative_moe.so`,
+`runtime.py`, and the build log. Mount the compile output at `/work` if you need
+the original compiler input paths. A clean rebuild is **not** expected to match
+the release digest; `-lineinfo` and the GNU build-id vary. Do not bypass
+`prepare_profile.py`: review the build and repeat the native/integration gates
+before repinning.
 
 ## Select a profile
 
@@ -90,7 +93,8 @@ CPU-only tests require Python 3.10+ and its standard library:
 ```sh
 python3 extensions/cooperative_moe/test_dispatch.py
 python3 extensions/cooperative_moe/test_profile.py
-bash -n extensions/cooperative_moe/build.sh
+python3 extensions/cooperative_moe/test_build.py
+bash -n extensions/cooperative_moe/build.sh extensions/cooperative_moe/archive_upstream.sh
 ```
 
 `test_cuda_integration.py` exercises actual Torch tensors, graph replay/mutation,

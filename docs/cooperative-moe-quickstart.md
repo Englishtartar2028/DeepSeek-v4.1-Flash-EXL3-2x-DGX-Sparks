@@ -8,8 +8,10 @@ two requests, and DSpark k=3. Vision is outside this validation scope.
 
 **Activation is a selected overlay, not a standalone environment toggle.**
 `DSV41_COOPERATIVE_MOE=1 ./start.sh start` by itself does not import the adapter or
-deploy its binary. The sequence below builds and verifies artifacts, copies them
-to both nodes, then selects the generated overlay in `.env`.
+deploy its binary. The sequence below stages the **already-validated** native library, verifies
+artifacts, copies them to both nodes, then selects the generated overlay in `.env`.
+A local nvcc rebuild is not the operator path: the pinned recipe image has no
+`git`, and clean compiles are not bit-identical.
 
 Read the rollback section before starting. Steps 2–7 require a maintenance window;
 the stop command cancels any remaining DS4.1 requests. Do not run these GPU tests
@@ -79,29 +81,39 @@ The registry digest above resolves to this image; unlike a local image ID it can
 be pulled by another operator. Do not substitute a mutable `latest` tag and
 assume that it reproduces the validated artifact.
 
-## 3. Build in the pinned image
+## 3. Stage the validated native library
 
-The build is CPU-only and bounded to two CPUs/2 GiB. It uses `/work` as its output
-mount to preserve the original compiler input paths. No GPU is assigned to it.
+Do **not** compile inside the recipe image for opt-in. That image has no `git`,
+and two clean `nvcc` runs of the same sources produce different GNU build-ids and
+CUDA `-lineinfo` metadata. `prepare_profile.py` correctly rejects those binaries.
+
+Install the GPU-validated `cooperative_moe.so` whose digest is
+`a09a589cbdcecb5372991c7b091d732236d58bc5f5aea14ab91e38e426f08d78`. Prefer a
+checked-in file at `extensions/cooperative_moe/artifacts/cooperative_moe.so`, or
+the matching GitHub Release asset. Then:
 
 ```bash
-git clone --filter=blob:none --no-checkout https://github.com/turboderp-org/exllamav3.git "$COOP_RUN/exllamav3"
-git -C "$COOP_RUN/exllamav3" checkout --detach 02aef45cd681b960a00afcd0749a4ab99e6c1bfe
+COOP_SO="$COOP_REPO/extensions/cooperative_moe/artifacts/cooperative_moe.so"
+test -f "$COOP_SO"
 mkdir "$COOP_RUN/build"
-docker run --rm --network none --cpus 2 --memory 2g --memory-swap 2g \
-  --user "$(id -u):$(id -g)" \
-  -v "$COOP_REPO/extensions/cooperative_moe:/src:ro" \
-  -v "$COOP_RUN/exllamav3:/upstream:ro" \
-  -v "$COOP_RUN/build:/work" \
-  --entrypoint bash "$COOP_IMAGE" /src/build.sh /upstream /work
+install -m 644 "$COOP_SO" "$COOP_REPO/extensions/cooperative_moe/runtime.py" \
+  "$COOP_RUN/build/"
+(
+  cd "$COOP_RUN/build"
+  printf '%s  cooperative_moe.so\n' \
+    'a09a589cbdcecb5372991c7b091d732236d58bc5f5aea14ab91e38e426f08d78' |
+    sha256sum -c
+)
 ```
 
-The expected `cooperative_moe.so` digest is
-`a09a589cbdcecb5372991c7b091d732236d58bc5f5aea14ab91e38e426f08d78`.
-`prepare_profile.py` enforces this and the stock/runtime source digests. If a
-clean rebuild differs, preserve the build log and stop: the current release gate
-is intentionally closed to unvalidated artifacts. Do not change the digest just
-to make the helper accept a build.
+`prepare_profile.py` re-checks this digest plus the stock/runtime source pins.
+Do not change the digest just to make the helper accept a rebuild.
+
+Optional source rebuilds belong in an approved maintenance lab, not this
+runbook. Archive headers **on the host** with
+`extensions/cooperative_moe/archive_upstream.sh`, then compile with
+`build.sh` against that extracted tree. A matching hash is not expected; only a
+re-run of the GPU gate plus an explicit pin update can promote a new binary.
 
 ## 4. Generate the overlay and deploy identical artifacts to both nodes
 
@@ -265,7 +277,8 @@ enable the feature. No model weights, caches or rollback files need deletion.
 ## Validation status of this procedure
 
 The launcher wiring, immutable image manifest, command syntax, paths, source pins
-and host-side tests have been checked. The original implementation has the GPU
-and serving evidence in the report. This complete clean-build/two-node runbook
-has **not yet been executed end to end** against the final package; do not treat
-the commands or a draft PR as a substitute for recording those results.
+and host-side tests have been checked. Post-merge revalidation confirmed the
+decode speedup when a locally rebuilt binary was **repinned after** the 54-case
+GPU gate. The published operator path is the validated `a09a589c…` artifact, not
+a clean image rebuild. Record the release-asset or in-tree `.so` placement
+before treating this runbook as executable from a checkout that lacks that file.

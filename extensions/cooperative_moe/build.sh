@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# Build artifacts only; never select a profile or modify a running service.
+# Compile artifacts only; never select a profile or modify a running service.
+# Requires an already-extracted pinned ExLlamaV3 tree (see archive_upstream.sh).
+# Does not call git: the recipe image has no git executable.
 set -euo pipefail
 
-upstream_checkout=${1:?Usage: build.sh EXLLAMAV3_CHECKOUT EMPTY_OUTPUT_DIRECTORY}
-output_dir=${2:?Usage: build.sh EXLLAMAV3_CHECKOUT EMPTY_OUTPUT_DIRECTORY}
+upstream_tree=${1:?Usage: build.sh EXTRACTED_EXLLAMAV3_TREE EMPTY_OUTPUT_DIRECTORY}
+output_dir=${2:?Usage: build.sh EXTRACTED_EXLLAMAV3_TREE EMPTY_OUTPUT_DIRECTORY}
 source_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-upstream_pin=02aef45cd681b960a00afcd0749a4ab99e6c1bfe
 
-test "$(git -C "$upstream_checkout" rev-parse "$upstream_pin^{commit}")" = "$upstream_pin"
+test -d "$upstream_tree/exllamav3/exllamav3_ext"
 mkdir -p -- "$output_dir"
 output_dir=$(cd -- "$output_dir" && pwd)
 test -z "$(find "$output_dir" -mindepth 1 -maxdepth 1 -print -quit)" || {
@@ -16,8 +17,7 @@ test -z "$(find "$output_dir" -mindepth 1 -maxdepth 1 -print -quit)" || {
 }
 
 mkdir -- "$output_dir/upstream"
-git -C "$upstream_checkout" archive "$upstream_pin" exllamav3/exllamav3_ext |
-  tar -x -C "$output_dir/upstream"
+cp -a -- "$upstream_tree/exllamav3" "$output_dir/upstream/exllamav3"
 
 # Preserve the validated compiler input names and ABI v1 symbols. Changing these
 # can change the binary hash even when device arithmetic is identical.
@@ -28,6 +28,9 @@ cp -- "$source_dir/native/exl3_moe_coop.cuh" \
   "$output_dir/upstream/exllamav3/exllamav3_ext/quant/exl3_moe_coop.cuh"
 cp -- "$source_dir/runtime.py" "$output_dir/runtime.py"
 
+# -lineinfo plus the GNU build-id make nvcc output non-reproducible across clean
+# runs of the same command. Keep these flags for ABI compatibility with the
+# GPU-validated artifact; do not treat a local rebuild as the release pin.
 "${NVCC:-/usr/local/cuda/bin/nvcc}" -std=c++17 -O3 --use_fast_math -lineinfo --expt-relaxed-constexpr \
   -gencode arch=compute_121a,code=sm_121a -shared -Xcompiler -fPIC --ptxas-options=-v \
   -I "$output_dir/upstream/exllamav3/exllamav3_ext" \

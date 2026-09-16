@@ -34,6 +34,7 @@
 # tests/test_row_store.py to work without the image.
 # ---------------------------------------------------------------------------
 *.so
+!/extensions/cooperative_moe/artifacts/cooperative_moe.so
 *.o
 *.a
 build/
