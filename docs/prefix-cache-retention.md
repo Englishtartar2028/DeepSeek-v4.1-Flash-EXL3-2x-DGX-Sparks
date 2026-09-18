@@ -78,6 +78,11 @@ around misses by pretending that missing sliding-window KV is a valid hit.
 
 ## Validation
 
+Per-request cached-token fields require the vLLM usage-reporting option
+`--enable-prompt-tokens-details`, which the launcher enables. Retention controls
+cache reuse independently of reporting and does not alter API usage schemas.
+Engine prefix-cache metrics can also establish reuse when fields are absent.
+
 Host-only launcher regression:
 
 ```bash
@@ -96,10 +101,13 @@ Retention 0 reproduced the live alignment cliff. Retention 4096 recovered a
 positive hit at all 133 tested lengths; for a 34357-token input it recovered
 32768 tokens. This synthetic manager test is not a model-output quality test.
 
-Live validation receipts will record the exact profile, cache counts, outputs of
-owned probes, Pi timing metadata without private prompts, and memory headroom.
-Changing retention does not establish full 600k inference or arbitrary concurrent
-long-context capacity. Before deploying a different profile, check:
+Two-Spark validation on 2026-09-18 used DSpark k=3, batch 1536, 96 IO threads,
+vision on, packed Engram, two active sequences, a 2.5 GiB KV pool per rank, and
+the existing GPU-validated cooperative safety overlay. A 34357-token Pi replay
+went from zero hits on all repeats to **0 / 32768 / 32768** cached tokens for
+cold/second/third requests with retention 4096. This validates reuse for that
+profile, not k=5, full 600k inference, or arbitrary concurrent long-context
+capacity. Before deploying a different profile, check:
 
 1. Cold/repeated requests on both sides of the boundary, especially 8193/8256/8257.
 2. Append-only tool-bearing sessions with exact-prefix verification.
