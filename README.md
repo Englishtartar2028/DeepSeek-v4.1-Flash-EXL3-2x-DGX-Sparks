@@ -392,6 +392,23 @@ onto each node's local NVMe (47.2 GiB per layer per rank at TP=2, so ~94 GiB per
 node; packing took 8.5 min). Decode and prefill then miss to local O_DIRECT
 instead of NFS — worth 25–50 % of prefill. Not required to boot.
 
+## Agent prefix caching
+
+Both ranks default to `PREFIX_CACHE_RETENTION_INTERVAL=4096`, passed explicitly
+as `--prefix-cache-retention-interval`. Periodic hybrid-cache checkpoints avoid
+zero-hit alignment cliffs observed with the image's latest-boundary-only default,
+and improve the opportunities for append-only sessions and earlier forks to reuse
+state. Existing `.env` files inherit the new default on their next restart.
+
+This uses the existing KV pool, not extra reserved GPU memory. Checkpoints remain
+evictable and are not a pinned per-session tree. More retained state trades cache
+competition/bookkeeping for reuse; compaction that rewrites the prefix still needs
+new prefill. Set `PREFIX_CACHE_RETENTION_INTERVAL=0` to restore the previous policy.
+Use this knob rather than duplicating the flag in `EXTRA_ARGS`.
+
+See [prefix-cache retention](docs/prefix-cache-retention.md) for the reproduction,
+configuration validation, operational limits, and deployment checks.
+
 ## CX7
 
 Pins on this pair: spark1 `enp1s0f1np1`/`rocep1s0f1` ↔

@@ -147,6 +147,10 @@ DSPARK_TOKENS="${DSPARK_TOKENS:-5}"
 KV_CACHE_DTYPE="${KV_CACHE_DTYPE:-}"
 # 64-token KV blocks on GB10 (SM12x DeepGEMM paged indexer: 32/64 states per block).
 KV_BLOCK_SIZE="${KV_BLOCK_SIZE:-64}"
+# Preserve periodic hybrid-cache checkpoints for agent continuations and forks.
+# The image defaults to 0 (latest reachable boundaries only), which can miss
+# completely when the DSpark block-drop guard needs an earlier checkpoint.
+PREFIX_CACHE_RETENTION_INTERVAL="${PREFIX_CACHE_RETENTION_INTERVAL-4096}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-600000}"
 GPU_MEM_UTIL="${GPU_MEM_UTIL:-0.88}"
 MAX_NUM_SEQS="${MAX_NUM_SEQS:-2}"
@@ -345,6 +349,26 @@ _glm53_validate_spinwait_ms() {
         GLM53_SPINWAIT_MS "$GLM53_SPINWAIT_MS" 1000
 }
 
+_dsv41_validate_prefix_retention() {
+    local value="${PREFIX_CACHE_RETENTION_INTERVAL-4096}"
+    if ! [[ "$value" =~ ^[0-9]+$ ]]; then
+        echo "PREFIX_CACHE_RETENTION_INTERVAL must be 0 or a positive multiple of 128 (got: $value)" >&2
+        return 2
+    fi
+    while [ "${value#0}" != "$value" ]; do value="${value#0}"; done
+    value="${value:-0}"
+    if [ "${#value}" -gt 7 ] || [ "$value" -gt 1048576 ] || (( value % 128 != 0 )); then
+        echo "PREFIX_CACHE_RETENTION_INTERVAL must be 0 or a multiple of 128 up to 1048576 (got: $value)" >&2
+        return 2
+    fi
+    if [[ " ${EXTRA_ARGS:-} " =~ [[:space:]]--prefix-cache-retention-interval([[:space:]=]|$) ]]; then
+        echo "Set PREFIX_CACHE_RETENTION_INTERVAL instead of duplicating --prefix-cache-retention-interval in EXTRA_ARGS" >&2
+        return 2
+    fi
+    PREFIX_CACHE_RETENTION_INTERVAL="$value"
+    export PREFIX_CACHE_RETENTION_INTERVAL
+}
+
 validate_numeric_config() {
     if ! [[ "$GPU_MEM_UTIL" =~ ^(0([.][0-9]+)?|[.][0-9]+|1([.]0+)?)$ ]] \
        || ! awk -v u="$GPU_MEM_UTIL" 'BEGIN { exit !(u > 0 && u <= 1) }'; then
@@ -357,6 +381,7 @@ validate_numeric_config() {
     _glm53_validate_enum GLM53_INDEXER_WORKSPACE "${GLM53_INDEXER_WORKSPACE-stock}" \
         stock rightsize || return
     _glm53_validate_spinwait_ms || return
+    _dsv41_validate_prefix_retention || return
 }
 # GLM53 numeric config guard (end)
 
@@ -1031,6 +1056,7 @@ ARGS=(
     --tensor-parallel-size "${TP}"
     --nnodes "${NNODES}"
     --node-rank 0
+    --prefix-cache-retention-interval "${PREFIX_CACHE_RETENTION_INTERVAL}"
     --master-addr "${HEAD_IP}"
     --master-port "${MASTER_PORT}"
     --distributed-executor-backend mp
@@ -1128,6 +1154,7 @@ ARGS=(
     --tensor-parallel-size "${TP}"
     --nnodes "${NNODES}"
     --node-rank 1
+    --prefix-cache-retention-interval "${PREFIX_CACHE_RETENTION_INTERVAL}"
     --master-addr "${HEAD_IP}"
     --master-port "${MASTER_PORT}"
     --distributed-executor-backend mp
@@ -1386,7 +1413,7 @@ launch_cluster() {
     local v
     for v in SERVED_MODEL_NAME PORT TP NNODES HEAD_IP MASTER_PORT QUANTIZATION \
              MAX_MODEL_LEN GPU_MEM_UTIL MAX_NUM_SEQS MAX_NUM_BATCHED_TOKENS \
-             KV_CACHE_DTYPE SPEC_METHOD DSPARK_TOKENS \
+             KV_CACHE_DTYPE SPEC_METHOD DSPARK_TOKENS PREFIX_CACHE_RETENTION_INTERVAL \
              LANGUAGE_MODEL_ONLY SKIP_MM_PROFILING \
              LIMIT_MM CHAT_TEMPLATE ENFORCE_EAGER EXL3_FUSED_MOE EXL3_MOE_ROW_TILE \
              EXL3_TEMP_ROWS_FUSED EXL3_FAT_SORTED EXL3_FAT_BATCHED EXL3_FAT_KERNEL \
@@ -1500,6 +1527,7 @@ launch_cluster() {
         -e MAX_NUM_BATCHED_TOKENS="$MAX_NUM_BATCHED_TOKENS" \
         -e LONG_PREFILL_TOKEN_THRESHOLD="${LONG_PREFILL_TOKEN_THRESHOLD:-}" \
         -e KV_CACHE_DTYPE="$KV_CACHE_DTYPE" \
+        -e PREFIX_CACHE_RETENTION_INTERVAL="$PREFIX_CACHE_RETENTION_INTERVAL" \
         -e SPEC_METHOD="$SPEC_METHOD" \
         -e DSPARK_TOKENS="${DSPARK_TOKENS:-5}" \
         -e LANGUAGE_MODEL_ONLY="$LANGUAGE_MODEL_ONLY" \
